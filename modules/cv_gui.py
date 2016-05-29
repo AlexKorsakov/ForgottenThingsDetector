@@ -3,8 +3,10 @@
 
 from PyQt4 import QtGui
 from PyQt4 import QtCore
+from PyQt4.QtCore import *
+from PyQt4.QtGui import *
 from PyQt4.QtGui import QImage, qRgb
-from datetime import datetime, date, time
+from Tkinter import *
 import time
 import cv2
 import numpy as np
@@ -13,17 +15,18 @@ import img_proc
 class cvGUI(QtGui.QWidget):
     def __init__(self, parent=None):
 
-
         QtGui.QWidget.__init__(self, parent)
+
         # QString To QByteArrray - b = qs.toUtf8
         # QByteArray to string - s = str(b)
 
         ### Настраиваем основное окно
 
-        self.setWindowIcon(QtGui.QIcon('favicon.ico'))
-        self.setWindowTitle('Computer Vision System GUI')
-        self.setToolTip('Developed by <b></b> Murom {0} 2016'.format(chr(169)))
-        QtGui.QToolTip.setFont(QtGui.QFont('OldEnglish', 10))
+        self.setWindowTitle('Forgotten Things Detector')
+        self.setWindowIcon(QtGui.QIcon('F:\\favicon.ico'))
+        self.setStyleSheet(img_proc.read_stylesheet("F:\style.qss"))
+
+        #btn.setToolTip('This is a <b>QPushButton</b> widget')
 
         # По центру экрана
         self.center()
@@ -31,7 +34,7 @@ class cvGUI(QtGui.QWidget):
         ### Объявляем переменные
 
         #self.n = img_proc.get_cams(n=self.n, list_of_cams=self.list_of_cams)[0]
-        self.format_list = ["mp4", "bmp", "png"]
+        self.format_list = ["mp4", "3gp", "bmp", "png"]
         self.filename = ""
         self.fileslist = ""
         self.size = 200
@@ -39,126 +42,167 @@ class cvGUI(QtGui.QWidget):
         self.n = 0
         self.now_time = 0
         #ROI values
-        c1 = 200
-        r1 = 200
-        h = 200
+        self.x1 = 0
+        self.x2 = 0
+        self.y1 = 0
+        self.y2 = 0
+        self.issetroi = False
         self.start_time = time.time()
         self.new_opened = False
         self.list_of_cams = {}
         #self.cap = cv2.VideoCapture('test.mp4')
-        self.cap = cv2.VideoCapture(0)
+        self.cap = None #cv2.VideoCapture(0)
         self.capture = None
         self.capturing = None
 
+        self.initial_frame = None
         self.currentFrame = None
         self.frame = None
         self.etalon = 0
         self.frame1 = 0      #обработанный etalon
         self.objects = 0
         self.predmet = 0
-        self.interval = 100
         self.diff_each = 0
         self.frame_counter = 0
         self.obj_coordinates = []
+        self.interval = 100
+        self.contour_area1 = 50
+        self.contour_area2 = 5000
+        self.previous = 0
 
 
 
         ### Создаем объекты компонентов формы
-        self.image = QtGui.QLabel('', self)
+        '''
+        #self.QtGui.statusBar().showMessage('Ready')
+        self.myQMenuBar = QtGui.QMenuBar(self)
+        exitMenu = self.myQMenuBar.addMenu('File')
+        exitAction = QtGui.QAction('Exit', self)
+        exitAction.triggered.connect(QtGui.qApp.quit)
+        exitMenu.addAction(exitAction)
+        '''
+        #
+        #Создание элементов управления
+        #
+        self.image =                QtGui.QLabel('', self)
+        self.start_button =         QtGui.QPushButton(u'Старт')
+        self.pause_button =         QtGui.QPushButton(u'Пауза')
+        self.end_button =           QtGui.QPushButton(u'Конец')
+        self.btnOpen =              QtGui.QPushButton(u'Открыть', self)
+        self.btnMove =              QtGui.QPushButton('Go', self)
+        self.set_etalon_btn =       QtGui.QPushButton(u'Эталон')
+        self.cb =                   QtGui.QCheckBox('Show filename', self)
+        self.roi_checkbox =         QtGui.QCheckBox('ROI', self)
+        self.btnSetROI =            QtGui.QPushButton('SetROI', self)
+        self.txb_ot =              QtGui.QLabel(u'От',self)
+        self.txb_do =              QtGui.QLabel(u'До',self)
+        self.pbar =                 QtGui.QProgressBar(self)
+        self.btnstart =             QtGui.QPushButton('Start', self)
+        self.txtb_sl2 =             QtGui.QSpinBox(self)                         # редактируемые поля
+        self.txtb_sl1 =             QtGui.QSpinBox(self)
+        self.list =                 QtGui.QListWidget(self)                         # список
+        self.spinbox =              QtGui.QSpinBox(self)
+        self.lbl=                   QtGui.QLabel(u'Количество',self)
+        self.timer_lbl=             QtGui.QLabel(self)
+        self.saveframe_button =     QtGui.QPushButton(u'Сохранить')
+        self.a =                    QtGui.QStatusBar(self)
+        self.video_timer =          QtCore.QTimer()
 
-        self.start_button = QtGui.QPushButton('Start')
-        self.end_button = QtGui.QPushButton('End')
+        self.btnSetROI.setEnabled(False)
         #self.end_button.setEnabled(False)
-        self.stop_button = QtGui.QPushButton('Stop')
-        #self.stop_button.setEnabled(False)
+        #self.pause_button.setEnabled(False)
 
-        self.video_timer = QtCore.QTimer()
-        # Создаем кнопку с названием
-        self.btnOpen = QtGui.QPushButton('Open', self)
         self.btnOpen.setFocusPolicy(QtCore.Qt.NoFocus)
-        # Создаем кнопку с названием
-        self.btnMove = QtGui.QPushButton('Go', self)
         self.btnMove.setFocusPolicy(QtCore.Qt.NoFocus)
-
-        self.cb = QtGui.QCheckBox('Show filename', self)
         self.cb.setFocusPolicy(QtCore.Qt.NoFocus)
         # состояние по умолчанию - выкл
         # self.cb.toggle()
-        
-        self.slider = QtGui.QSlider(QtCore.Qt.Horizontal, self)
-        self.slider.setRange(self.size, self.size+500)
-        self.slider.setFocusPolicy(QtCore.Qt.NoFocus)
-
         # прогрессбар
-        self.pbar = QtGui.QProgressBar(self)
         self.pbar.setGeometry(30, 40, 200, 25)
 
-        self.btnstart = QtGui.QPushButton('Start', self)
         self.btnstart.setCheckable(True)
         self.btnstart.setFocusPolicy(QtCore.Qt.NoFocus)
 
         self.timer = QtCore.QBasicTimer()
-        self.step = 0
-
-        #SetROI
-        self.btnSetROI = QtGui.QPushButton('SetROI', self)
-
-        # Создаем редактируемые поля
-        self.reviewEdit = QtGui.QTextEdit()
-        self.aboutEdit = QtGui.QTextEdit()
-        # Создаем список
-        self.list = QtGui.QListWidget(self)
-
+        self.timer_step = 0
+        self.spinbox.setRange(0, 640)
+        self.txtb_sl1.setRange(1, 10000)
+        self.txtb_sl2.setRange(1, 10000)
+        self.txtb_sl1.setValue(self.contour_area1)
+        self.txtb_sl2.setValue(self.contour_area2)
 
         ### Связываем события(сигналы) с методами нашего класса
 
         # событие нажатия на item в QListWidget
         self.connect(self.list, QtCore.SIGNAL("itemClicked(QListWidgetItem *)"), self.on_item_select)
-        self.setFocus()
-
-        # События нажатия кнопок
-        #self.connect(self.btnOpen, QtCore.SIGNAL('clicked()'), self.OpenDialog)
-        self.setFocus()
-
         self.connect(self.btnMove, QtCore.SIGNAL('clicked()'), self.on_movetext)
-        self.setFocus()
         # кнопка старта прогрессбара
         self.connect(self.btnstart, QtCore.SIGNAL('clicked()'), self.on_progress)
-        self.setFocus()
 
-        self.connect(self.slider, QtCore.SIGNAL('valueChanged(int)'), self.on_slide)
-        self.setFocus()
+        #self.connect(self.slider, QtCore.SIGNAL('valueChanged(int)'), self.on_slide)
+        #self.slider.valueChanged.connect(self.on_slide)
+        #self.slider1.valueChanged.connect(self.on_slider1_valuechanged)
+        #self.slider2.valueChanged.connect(self.on_slider2_valuechanged)
+        self.txtb_sl1.valueChanged.connect(self.on_txtb_sl1_valchanged)
+        self.txtb_sl2.valueChanged.connect(self.on_txtb_sl2_valchanged)
 
         self.btnOpen.clicked.connect(self.OpenDialog)
         self.start_button.clicked.connect(self.on_start_capture)
         self.end_button.clicked.connect(self.on_end_capture)
-        self.stop_button.clicked.connect(self.stop)
-        # чек бокс
+        self.pause_button.clicked.connect(self.stop)
+        self.saveframe_button.clicked.connect(self.take_frame)
+        self.set_etalon_btn.clicked.connect(self.set_etalon_frame)
+        # чекбоксы
         self.connect(self.cb, QtCore.SIGNAL('stateChanged(int)'), self.on_checkbox)
+        self.connect(self.roi_checkbox, QtCore.SIGNAL('stateChanged(int)'), self.on_roi_checkbox)
 
         ### Создаем сетку для размещения виджетов
         grid = QtGui.QGridLayout()
+        self.statusBar = QStatusBar()
+        #self.setStatusBar(self.statusBar)
         grid.setSpacing(10)
         #  строка, столбец, сколько ячеек, столбцов
-        grid.addWidget(self.btnstart, 1, 12, 1, 1)
-        grid.addWidget(self.btnMove, 2, 12, 1, 1)    #go
-        grid.addWidget(self.btnOpen, 3, 12, 1, 1)
-        grid.addWidget(self.btnSetROI, 4, 12, 1, 1)
-        grid.addWidget(self.start_button, 6, 12)
-        grid.addWidget(self.stop_button, 7, 12)
-        grid.addWidget(self.end_button, 8, 12)
-        grid.addWidget(self.image, 2, 2, 10, 10)     #video
-        grid.addWidget(self.slider, 11, 2, 11, 4)
-        #grid.addWidget(self.reviewEdit, 4, 1, 1, 1)
-        grid.addWidget(self.pbar, 12, 2, 12, 4)
-        '''
-        grid.addWidget(self.list, 1, 0)
-        #grid.addWidget(self.image2, 0, 4, 1, 4)
-        grid.addWidget(self.aboutEdit, 4, 1, 1, 1)
-        grid.addWidget(self.cb, 5, 0)
-        '''
+        grid.addWidget(self.image,              1, 1, 10, 10)        #video
+        grid.addWidget(self.btnstart,           1, 12, 1, 1)
+        grid.addWidget(self.btnMove,            2, 12, 1, 1)       #go
+        grid.addWidget(self.btnOpen,            3, 12, 1, 1)       #Open
+        grid.addWidget(self.cb,                 4, 12, 1, 1)            #check
+        grid.addWidget(self.start_button,       5, 12)
+        grid.addWidget(self.pause_button,       6, 12)
+        grid.addWidget(self.end_button,         7, 12)
+        grid.addWidget(self.saveframe_button,   8, 12, 1, 1)
+        grid.addWidget(self.btnSetROI,          9, 12, 1, 1)     #SetROI
+        grid.addWidget(self.roi_checkbox,       10, 12, 1, 1)
+        grid.addWidget(self.set_etalon_btn,     11, 12, 1, 1)
+        grid.addWidget(self.txb_ot,             12, 4, 1, 1)
+        grid.addWidget(self.txb_do,             12, 5, 1, 1)
+        grid.addWidget(self.timer_lbl,          12, 12, 1, 1)
+        grid.addWidget(self.txtb_sl1,           13, 4, 1, 1)
+        grid.addWidget(self.txtb_sl2,           13, 5, 1, 1)
+        grid.addWidget(self.lbl,                14, 2, 1, 1)
+        grid.addWidget(self.spinbox,            14, 2, 1, 1)
+        grid.addWidget(self.pbar,               15, 2, 2, 4)
+        grid.addWidget(self.list,               15, 8, 1, 1)
+        grid.addWidget(self.a,                  17, 2)
+
         self.setLayout(grid)
         self.resize(900, 600)
+
+
+    def mouseDoubleClickEvent(self, e):
+        '''
+
+        if self.issetroi is True:                   #roi задан
+            self.x1 = 0
+            self.y1 = 0
+        '''
+        if self.x1 != 0 and self.y1 != 0:
+            self.x2 = e.x()
+            self.y2 = e.y()
+        else:
+            self.x1 = e.x()
+            self.y1 = e.y()
+        print "#### {0} | {1} #### {2} | {3}".format(self.x1, self.y1, self.x2, self.y2)
 
 
     def center(self):
@@ -185,8 +229,17 @@ class cvGUI(QtGui.QWidget):
                     print "    Opening file {0}...".format(self.filename)
 
                     self.cap = cv2.VideoCapture(self.filename)
-                    # print "\n\n{0}\n\n{1}".format(type(str(i.toUtf8())), type(i.toUtf8()))
-                    #self.show_img(i.toUtf8())
+                    (major_ver, minor_ver, subminor_ver) = (cv2.__version__).split('.')
+                    if int(major_ver) < 3:
+                        fps = self.cap.get(cv2.cv.CV_CAP_PROP_FPS)
+                        print "Frames per second using video.get(cv2.cv.CV_CAP_PROP_FPS): {0}".format(fps)
+                    else:
+                        fps = self.cap.get(cv2.CAP_PROP_FPS)
+                        print "Frames per second using video.get(cv2.CAP_PROP_FPS) : {0}".format(fps)
+                    self.set_fps(fps)
+
+                    #screen = QtGui.QDesktopWidget().screenGeometry()
+                    #self.set_slide_val(screen.height())
 
                     frm = str(i.split("/")[-1].split(".")[-1])
                     fn = i.split("/")[-1]
@@ -219,6 +272,18 @@ class cvGUI(QtGui.QWidget):
     def set_fps(self, fps):
         self.fps = fps
 
+    def set_slide_val(self, height):
+        self.slider1.setRange(height / 2, height * 2)
+        self.size = height
+
+    def set_etalon_frame(self):
+        kadr = cv2.cvtColor(self.initial_frame, cv2.COLOR_RGB2GRAY)         #В градации серого
+        self.etalon = cv2.medianBlur(kadr, 5)    #медианная
+
+    #def set_roi(self):
+
+
+
     def setup_pixmap(self, img):
         #h, w, bpLine = None
         if len(img.shape)>2:
@@ -244,24 +309,48 @@ class cvGUI(QtGui.QWidget):
         if self.cap is None:
             self.cap = cv2.VideoCapture(0)
             self.set_fps(30)
-        else:
+        #else:
              #self.set_fps(self.cap.get(cv2.CV_CAP_PROP_FPS))
-             self.set_fps(30)
+             #self.set_fps(30)
         self.start()
+    '''
+    def on_slider1_valuechanged(self, val):              #Слайдер1
+        if val < self.contour_area2:
+            pos = val
+            self.contour_area1 = pos
+            self.txtb_sl1.setValue(pos)
+
+    def on_slider2_valuechanged(self, val):              #Слайдер2
+        if val > self.contour_area1:
+            pos = val
+            self.contour_area1 = pos
+            self.txtb_sl2.setValue(pos)
+    '''
+    def on_txtb_sl1_valchanged(self, val):
+        self.contour_area1 = val
+
+    def on_txtb_sl2_valchanged(self, val):
+        self.contour_area2 = val
+
+    def on_end_capture(self):
+        self.video_timer.stop()
+        #self.cap.release()
+
+        #self.default_image()
+        self.pause_button.setEnabled(False)
+        self.end_button.setEnabled(False)
+        #self.start_button.setEnabled(True)
+        #self.next_image_button.setEnabled(False)
+        self.cap = None
+        #self.img_list = list(self.img_box)
 
     def on_movetext(self):
-        cap = cv2.VideoCapture('test.mp4')
+        cap = cv2.VideoCapture('F:\\test.mp4')
         #cap = cv2.VideoCapture(0)
         #frame1 = self.ObjectDetectionInTime(cap)
         #self.ObjectDetectionInTime(cap)
 
-        text = self.aboutEdit.toPlainText()
-        # print type(text)
-        self.reviewEdit.setText(text)
-        self.aboutEdit.setText("")
-
     def on_checkbox(self, value):
-
         if self.cb.isChecked():
             if self.filename != "":
                 self.setWindowTitle(self.list.currentItem().text().split("/")[-1])
@@ -272,9 +361,19 @@ class cvGUI(QtGui.QWidget):
         else:
             self.setWindowTitle('Computer Vision System GUI')
 
+    def on_roi_checkbox(self):
+        if self.roi_checkbox.isChecked():
+            self.btnSetROI.setEnabled(True)
+        else:
+            self.btnSetROI.setEnabled(False)
+            self.x1 = 0
+            self.x2 = 0
+            self.y1 = 0
+            self.y2 = 0
+
     def on_slide(self, value):
-        pos = self.slider.value()
-        self.reviewEdit.setText(str(pos))
+        pos = self.slider1.value
+        self.txtb_sl2.setText(str(pos))
         self.on_resize()
 
     def on_item_select(self):
@@ -284,40 +383,29 @@ class cvGUI(QtGui.QWidget):
         self.show_img(str(self.list.currentItem().text().toUtf8()))
 
     def on_resize(self):
-        self.size = int(self.slider.value())
+        self.size = int(self.slider1.value)
         if self.fileslist != "":
             self.new_opened = False
-            if self.slider.value() != "" and self.new_opened == False:
-                self.size = int(self.slider.value())
-
-                self.show_img(str(self.list.currentItem().text().toUtf8()))
+            if self.slider1.value != "" and self.new_opened == False:
+                self.size = int(self.slider1.value)
+                #self.show_img(str(self.list.currentItem().text().toUtf8()))
                 # self.show_img(str(self.filename))
             self.new_opened = False
+
+        print(str(self.size))
 
     def on_progress(self):
         if self.timer.isActive():
             self.btnstart.setCheckable(True)
             self.timer.stop()
             self.btnstart.setText('Start')
-        elif self.timer.isActive() == False and self.step != 100:
+        elif self.timer.isActive() == False and self.timer_step != 100:
             self.timer.start(100, self)
             self.btnstart.setText('Stop')
         else:
             self.btnstart.setCheckable(True)
-            self.step = 0
+            self.timer_step = 0
             self.btnstart.setText('Start')
-
-    def on_end_capture(self):
-        self.video_timer.stop()
-        self.cap.release()
-
-        #self.default_image()
-        self.stop_button.setEnabled(False)
-        self.end_button.setEnabled(False)
-        #self.start_button.setEnabled(True)
-        #self.next_image_button.setEnabled(False)
-        self.cap = None
-        #self.img_list = list(self.img_box)
 
     def add_item(self, flist):
         if len(flist) > 1:
@@ -328,142 +416,86 @@ class cvGUI(QtGui.QWidget):
                 print e.args, e.message
 
     def timerEvent(self, event):
-        if self.step >= 100:
+        if self.timer_step >= 100:
             self.timer.stop()
-            self.step = 0
+            self.timer_step = 0
             self.btnstart.setText('Start')
             self.btnstart.setCheckable(False)
             self.btnstart.setCheckable(True)
             return
-        self.step += 1
-        self.pbar.setValue(self.step)
-
-
-
-    def ObjectDetectionInTime(self, frame):
-        etalon = 0
-        frame1 = 0      #обработанный etalon
-        objects = 0
-        predmet = 0
-        interval = 100
-        diff_each = 0
-        frame_counter = 0
-        obj_coordinates = []
-
-        #_, frame = cap.read()
-
-        dopusk = 1
-        # Convert BGR to HSV
-        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        frame1 = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)                #В градации серого
-        frame1 = cv2.GaussianBlur(frame1, (5, 5), 0)                       #Фильтр
-
-        #Берем первый кадр как эталон
-        if frame_counter == 0:
-            etalon = frame1
-            objects = cv2.absdiff(etalon, frame1)
-            predmet = objects
-            diff_each = predmet
-
-        diff_each = diff_each & cv2.absdiff(etalon, frame1)
-        #diff = cv2.absdiff(etalon, frame1)
-
-        #cv2.imshow('diff_each0',diff_each)
-        #cv2.imshow('etalon',etalon)
-        if frame_counter%interval == 0:
-            #diff[:,:] = etalon-frame1 if (etalon-frame1<5) else 0
-            diff = cv2.absdiff(etalon, frame1)
-            predmet = diff_each         #objects & diff
-            objects = diff
-            diff_each = diff
-        predmet=predmet&diff_each
-
-        #cv2.imshow('diff_each',diff_each)
-
-
-        ret,frame1 = cv2.threshold(frame1,0,255,  cv2.THRESH_OTSU)  #Бинаризация
-        ret,diff = cv2.threshold(predmet,0,255,  cv2.THRESH_OTSU)  #Бинаризация
-
-        #cv2.imshow('frame1',frame1)
-        #cv2.imshow('diff',diff)
-
-        dopusk = 1
-        diff = cv2.dilate(diff, None, iterations=2)
-        #cv2.imshow('dilate',diff)
-        (cnts, _) = cv2.findContours(diff.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        for c in cnts:
-            # if the contour is too small, ignore it
-            if cv2.contourArea(c) < 200:
-                continue
-            (x, y, w, h) = cv2.boundingRect(c)
-            obj_coordinates = [obj_coordinates,[x+w/2, y+h/2]]
-
-            for obj in obj_coordinates:
-                if obj!=[] and obj[0] < (x+w/2)+dopusk and obj[1] < (y+h/2)+dopusk and obj[0] > (x+w/2)-dopusk and obj[1] > (y+h/2)-dopusk:
-                    cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 255, 0), 2)
-
-
-        frame_counter = frame_counter + 1
-
-        # #cv2.imshow('ROI',ROI)
-        # k = cv2.waitKey(5) & 0xFF
-        # if k == 27:
-        #     break
-
-        screen = QtGui.QDesktopWidget().screenGeometry()
-        self.image.setPixmap(self.setup_pixmap(img_proc.im_res(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), height=screen.height())))
-
-        #return frame
-
+        self.timer_step += 1
+        self.pbar.setValue(self.timer_step)
 
     def next_frame(self):
         # try if cap is not None
         try:
+            self.timer_lbl.setText("{0}".format(self.frame_counter / (self.fps/2)))
+
+
             if self.cap.read()[0] is not None:
-                ret, self.currentFrame = self.cap.read()
-                self.orig_frame = cv2.cvtColor(self.currentFrame, cv2.cv.CV_BGR2RGB)
+                ret, self.initial_frame = self.cap.read()
+                self.currentFrame = self.initial_frame
 
-                hsv = cv2.cvtColor(self.currentFrame, cv2.COLOR_RGB2HSV)
+                if self.roi_checkbox.isChecked() and self.x1 != 0 and self.y2 != 0:             #выделение ROI
+                    temp = self.initial_frame
+                    '''
+                    temp[0:temp.size(1)] = 0
+                    mask = np.zeros((h,w,z), np.uint8)
+                    cv2.floodFill(temp, mask, (0,0), 255)
+                    '''
+                    temp[self.x1:self.x2, self.y1:self.y2] = self.initial_frame[self.x1:self.x2, self.y1:self.y2]
+                    #self.issetroi = True
+                    self.currentFrame = temp
+
                 self.frame1 = cv2.cvtColor(self.currentFrame, cv2.COLOR_RGB2GRAY)         #В градации серого
-                self.frame1 = cv2.GaussianBlur(self.frame1, (5, 5), 0)
+                self.frame1 = cv2.medianBlur(self.frame1, 5)    #медианная
 
-                #Берем первый кадр как эталон
-                if self.frame_counter == 0:
+                if self.frame_counter == 0:                 #Берем первый кадр как эталон
                     self.etalon = self.frame1
                     self.objects = cv2.absdiff(self.etalon, self.frame1)
                     self.predmet = self.objects
                     self.diff_each = self.predmet
 
                 self.diff_each = self.diff_each & cv2.absdiff(self.etalon, self.frame1)
-                #diff = cv2.absdiff(etalon, frame1)
 
-                if self.frame_counter%self.interval == 0:
-                    #diff[:,:] = etalon-frame1 if (etalon-frame1<5) else 0
+                cv2.imshow('diff_each0', self.diff_each)
+                if self.frame_counter % self.interval == 0:
                     self.diff = cv2.absdiff(self.etalon, self.frame1)
                     self.predmet = self.diff_each         #objects & diff
                     self.objects = self.diff
+                    #cv2.imshow('diff', self.diff)
                     self.diff_each = self.diff
                 self.predmet=self.predmet & self.diff_each
 
-                ret,self.frame1 = cv2.threshold(self.frame1,0,255,  cv2.THRESH_OTSU)  #Бинаризация
-                ret,self.diff = cv2.threshold(self.predmet,0,255,  cv2.THRESH_OTSU)  #Бинаризация
-
+                ret, self.frame1 = cv2.threshold(self.frame1, 0, 255,  cv2.THRESH_OTSU)  #Бинаризация
+                ret, self.diff = cv2.threshold(self.predmet, 0, 255,  cv2.THRESH_OTSU)  #Бинаризация
+                #морфологическое открытие/закрытие
                 dopusk = 1
                 self.diff = cv2.dilate(self.diff, None, iterations=2)
                 (cnts, _) = cv2.findContours(self.diff.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                print "cnts1: {0}".format(cnts)
+                counter = 0
                 for c in cnts:
-                    # if the contour is too small, ignore it
-                    if cv2.contourArea(c) < 200:
+                    Ploshad = cv2.contourArea(c)
+                    if Ploshad < self.contour_area1 or Ploshad > self.contour_area2:        #if cv2.contourArea(c) < 200:
                         continue
+                    counter += 1
+                    print "area: {0}".format(cv2.contourArea(c))
                     (x, y, w, h) = cv2.boundingRect(c)
+                    if previous is not None:
+                        self.is_equal([x, y, w, h],previous)
+                    previous = [x, y, w, h]
                     self.obj_coordinates = [self.obj_coordinates,[x+w/2, y+h/2]]
                     #Прямоугольники
-                    '''
                     for obj in self.obj_coordinates:
                         if obj != [] and obj[0] < (x+w/2)+dopusk and obj[1] < (y+h/2)+dopusk and obj[0] > (x+w/2)-dopusk and obj[1] > (y+h/2)-dopusk:
                             cv2.rectangle(self.currentFrame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-                    '''
-                cv2.drawContours(self.currentFrame, cnts, -1, (0, 255, 0), 1)
+                            #cv2.drawContours(self.currentFrame, cnts, counter, (0, 255, 255), 1)
+
+                #cnts = [c for c in cnts if cv2.contourArea(c) < self.contour_area]
+                #print "cnts2: {0}".format(cnts)
+
+                #cv2.drawContours(self.currentFrame, cnts, -1, (0, 255, 255), 1)
                 self.frame_counter = self.frame_counter + 1
 
                 '''for resizing'''
@@ -477,7 +509,8 @@ class cvGUI(QtGui.QWidget):
 
             else:
                 self.video_timer.stop()
-                self.cap = cv2.VideoCapture(self.n)
+                #self.cap = cv2.VideoCapture(self.n)
+                self.cap = cv2.VideoCapture(0)
                 self.start()
         except Exception as e:
             print e.args, e.message
@@ -486,17 +519,16 @@ class cvGUI(QtGui.QWidget):
         self.video_timer = QtCore.QTimer()
         self.video_timer.timeout.connect(self.next_frame)
         self.video_timer.start(1000./self.fps)
-
         #self.start_button.setEnabled(False)
-        self.stop_button.setEnabled(True)
+        self.pause_button.setEnabled(True)
         self.end_button.setEnabled(True)
         #self.next_image_button.setEnabled(True)
-
         self.capturing = True
 
     def stop(self):
         self.video_timer.stop()
-        # im_proc.im_save(self.orig_frame, 1)
+        #self.cap = None
+        # img_proc.im_save(self.orig_frame, 1)
         self.start_button.setEnabled(True)
         self.end_button.setEnabled(False)
         self.capturing = False
@@ -510,9 +542,28 @@ class cvGUI(QtGui.QWidget):
         self.show_img(self.currentFrame, self.image)
         # self.img_list = self.img_list[1:]
 
+    def take_frame(self):
+        if self.currentFrame is not None:
+            img_proc.im_save(self.currentFrame, 1)
+        else:
+            pass
 
+    def is_equal(self, cont1, cont2):      #cont1[x, y, w, h]       #
+        #if (cont1[0]+cont1[2]/2) == (cont2[0]+cont2[2]/2) and (cont1[1]+cont1[3]/2) == (cont2[1]+cont2[3]/2):
+        center1 = [cont1[0]+cont1[2]/2, cont1[1]+cont1[3]/2]
+        center2 = [cont2[0]+cont2[2]/2, cont2[1]+cont2[3]/2]
+        if self.in_diapazon(center1, center2):          #(cont1[0]+cont1[2]/2) == (cont2[0]+cont2[2]/2) and (cont1[1]+cont1[3]/2) == (cont2[1]+cont2[3]/2):
+            return True
+        else:
+            return False
+        #if obj != [] and obj[0] < (x+w/2)+dopusk and obj[1] < (y+h/2)+dopusk and obj[0] > (x+w/2)-dopusk and obj[1] > (y+h/2)-dopusk:
 
-
+    def in_diapazon(self, center1, center2):
+        if (center1[0]+2 > center2[0] or center1[0]-2 < center2[0]) and (center1[1]+2 > center2[1] or center1[1]-2 < center2[1]):
+            return True
+        else:
+            return False
+'''
 gray_color_table = [qRgb(i, i, i) for i in range(256)]
 
 def toQImage(im, copy=False):
@@ -532,3 +583,4 @@ def toQImage(im, copy=False):
             elif im.shape[2] == 4:
                 qim = QImage(im.data, im.shape[1], im.shape[0], im.strides[0], QImage.Format_ARGB32);
                 return qim.copy() if copy else qim
+'''
